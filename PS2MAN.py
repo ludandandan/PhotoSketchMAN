@@ -179,6 +179,7 @@ fake_B128_pool = ImagePool(50)
 
 Tensor = torch.cuda.FloatTensor if opt.gpu_ids else torch.Tensor
 
+#定义损失函数
 ## define losses
 criterionGAN = nets.GANLoss(use_lsgan=not opt.no_lsgan, tensor=Tensor)
 criterionCycle = torch.nn.L1Loss()
@@ -186,6 +187,7 @@ criterionIdt = torch.nn.L1Loss()
 criterionRec = torch.nn.L1Loss()
 criterionPatch = nets.patchloss()
 
+#图像变换，方便后续计算loss
 scale128_transform = transforms.Compose([
                                     transforms.ToPILImage(),
                                     transforms.Resize((128,128),interpolation=PIL.Image.BICUBIC),
@@ -265,22 +267,23 @@ def train():
     total_steps = 0
     for epoch in range(1, opt.niter + opt.niter_decay +1):
         for i, data in enumerate(dataset):
-
-            input_A = data['A'].float()
-            input_B = data['B'].float()
+            
+            # data是dict类型的
+            input_A = data['A'].float() #3通道照片图像1x3x256x256
+            input_B = data['B'].float() #3通道素描图图像1x3x256x256
 
             inputAimg = input_A
-            inputBimg = input_B
+            inputBimg = input_B #floatTensor类型[1,3,256,256]
 
-            input_Aimg = util.tensor2im(inputAimg)
+            input_Aimg = util.tensor2im(inputAimg)#ndarray类型[256,256,3]
             input_Bimg = util.tensor2im(inputBimg)
-            input_A128 = torch.unsqueeze(scale128_transform(input_Aimg),0)
+            input_A128 = torch.unsqueeze(scale128_transform(input_Aimg),0)#floatTensor类型，[1,3,128,128]
 
-            input_A64 = torch.unsqueeze(scale64_transform(input_Aimg),0)
-            input_B128 = torch.unsqueeze(scale128_transform(input_Bimg),0)
-            input_B64 = torch.unsqueeze(scale64_transform(input_Bimg),0)
+            input_A64 = torch.unsqueeze(scale64_transform(input_Aimg),0)#floatTensor类型，[1,3,64,64]
+            input_B128 = torch.unsqueeze(scale128_transform(input_Bimg),0)#floatTensor类型[1,3,128,128]
+            input_B64 = torch.unsqueeze(scale64_transform(input_Bimg),0)#floatTensor类型[1,3,64,64]
 
-            real_A = Variable(inputAimg).cuda()
+            real_A = Variable(inputAimg).cuda() 
             real_A128 = Variable(input_A128).cuda()
             real_A64 = Variable(input_A64).cuda()
 
@@ -289,7 +292,7 @@ def train():
             real_B64 = Variable(input_B64).cuda()
 
             ### PHOTO-->SKETCH-->PHOTO
-            fake_B64, fake_B128, fake_B = GA(real_A)
+            fake_B64, fake_B128, fake_B = GA(real_A)#fake_B64[1,3,64,64], #fake_B128[1,3,128,128]
             rec_A64, rec_A128, rec_A = GB(fake_B)
             ### SKETCH-->PHOTO-->SKETCH
             fake_A64, fake_A128, fake_A = GB(real_B)
@@ -303,25 +306,25 @@ def train():
             DB2.zero_grad()
             DB3.zero_grad()
 
-            fakeA = fake_A_pool.query(torch.cat((real_B, fake_A), 1).data)
-            realA = torch.cat((real_B, real_A),1)
-            loss_DA256_real,loss_DA256_fake,loss_DA256 = update_d(DA1,realA,fakeA)
+            fakeA = fake_A_pool.query(torch.cat((real_B, fake_A), 1).data)#[1,6,256,256]真素描，合成照片
+            realA = torch.cat((real_B, real_A),1)#[1,6,256,256]真素描真照片
+            loss_DA256_real,loss_DA256_fake,loss_DA256 = update_d(DA1,realA,fakeA)#利用真照片和合成照片计算loss并且去更新DA1
             optimizer_D_A1.step()
             #
             # print(real_A128)
             # print(fake_A128)
-            fakeA128 = fake_A128_pool.query(torch.cat((real_B128, fake_A128), 1).data)
-            realA128 = torch.cat((real_B128, real_A128),1)
-            loss_DA128_real,loss_DA128_fake,loss_DA128 = update_d(DA2,realA128,fakeA128)
+            fakeA128 = fake_A128_pool.query(torch.cat((real_B128, fake_A128), 1).data)#真素描假照片图像大小128
+            realA128 = torch.cat((real_B128, real_A128),1)#真素描真照片128*128
+            loss_DA128_real,loss_DA128_fake,loss_DA128 = update_d(DA2,realA128,fakeA128)#仍然是用MSE计算loss
             optimizer_D_A2.step()
 
-            fakeA64 = fake_A64_pool.query(torch.cat((real_B64, fake_A64), 1).data)
-            realA64 = torch.cat((real_B64, real_A64),1)
+            fakeA64 = fake_A64_pool.query(torch.cat((real_B64, fake_A64), 1).data)#真素描假照片，大小64*64
+            realA64 = torch.cat((real_B64, real_A64),1)#真素描真照片，大小64*64
             loss_DA64_real,loss_DA64_fake,loss_DA64 = update_d(DA3,realA64,fakeA64)
             optimizer_D_A3.step()
 
-            fakeB = fake_B_pool.query(torch.cat((real_A, fake_B), 1).data)
-            realB = torch.cat((real_A, real_B),1)
+            fakeB = fake_B_pool.query(torch.cat((real_A, fake_B), 1).data)#真照片假素描
+            realB = torch.cat((real_A, real_B),1)#真照片真素描
             loss_DB256_real,loss_DB256_fake,loss_DB256 = update_d(DB1,realB,fakeB)
             optimizer_D_B1.step()
 
@@ -342,13 +345,13 @@ def train():
 
             # First, G(A) should fake the discriminator
             pred_fakeB = DA1(fakeB)
-            loss_GA_GAN = criterionGAN(pred_fakeB, True)
+            loss_GA_GAN = criterionGAN(pred_fakeB, True)# GA应当骗过DA1,DA2,DA3
             pred_fakeB128 = DA2(fakeB128)
             loss_GA_GAN128 = criterionGAN(pred_fakeB128, True)
             pred_fakeB64 = DA3(fakeB64)
             loss_GA_GAN64 = criterionGAN(pred_fakeB64, True)
 
-            pred_fakeA = DB1(fakeA)
+            pred_fakeA = DB1(fakeA)#GB应当骗过DB1, DB2, DB3
             loss_GB_GAN = criterionGAN(pred_fakeA, True)
             pred_fakeA128 = DB2(fakeA128)
             loss_GB_GAN128 = criterionGAN(pred_fakeA128, True)
@@ -356,25 +359,25 @@ def train():
             loss_GB_GAN64 = criterionGAN(pred_fakeA64, True)
 
             # Second, G(A) = B
-            syn_A256 = criterionRec(fake_A,real_A)
-            syn_A128 = criterionRec(fake_A128,real_A128)
-            syn_A64  = criterionRec(fake_A64,real_A64)
+            syn_A256 = criterionRec(fake_A,real_A)# L1Loss,合成照片与真照片
+            syn_A128 = criterionRec(fake_A128,real_A128)#假照片，真照片
+            syn_A64  = criterionRec(fake_A64,real_A64)#假照片，真照片
 
-            syn_B256 = criterionRec(fake_B,real_B)
-            syn_B128 = criterionRec(fake_B128,real_B128)
-            syn_B64  = criterionRec(fake_B64,real_B64)
+            syn_B256 = criterionRec(fake_B,real_B)#假素描，真素描
+            syn_B128 = criterionRec(fake_B128,real_B128)#假素描，真素描
+            syn_B64  = criterionRec(fake_B64,real_B64)#假素描，真素描
 
-            cyc_A256 = criterionRec(rec_A,real_A)
-            cyc_A128 = criterionRec(rec_A128,real_A128)
-            cyc_A64  = criterionRec(rec_A64,real_A64)
+            cyc_A256 = criterionRec(rec_A,real_A)#重建照片，真照片
+            cyc_A128 = criterionRec(rec_A128,real_A128)#重建照片，真照片
+            cyc_A64  = criterionRec(rec_A64,real_A64)#重建照片，真照片
 
-            cyc_B256 = criterionRec(rec_B,real_B)
-            cyc_B128 = criterionRec(rec_B128,real_B128)
-            cyc_B64  = criterionRec(rec_B64,real_B64)
+            cyc_B256 = criterionRec(rec_B,real_B)#重建素描，真素描
+            cyc_B128 = criterionRec(rec_B128,real_B128)#重建素描，真素描
+            cyc_B64  = criterionRec(rec_B64,real_B64)#重建素描，真素描
 
-            eta = 1
-            mu = 0.7
-            Lambda = 10
+            eta = 1#GAN的
+            mu = 0.7#重建的
+            Lambda = 10#合成的
 
             loss_G =  eta * loss_GA_GAN \
                     + eta * loss_GA_GAN128\
@@ -399,6 +402,7 @@ def train():
             optimizer_G.step()
 
 
+            #用于记录Loss
             da1_loss_record.update(loss_DA256.data[0])
             da1_real_loss_record.update(loss_DA256_real.data[0])
             da1_fake_loss_record.update(loss_DA256_fake.data[0])
@@ -441,7 +445,8 @@ def train():
             syn_b3_loss_record.update(syn_B64.data[0])
             g_loss_record.update(loss_G.data[0])
             # print(loss_G.data[0])
-
+ 
+            #打印Loss
             if i % opt.print_iter == 0:
                 print(
                 '[train]: [epoch %d], [iter %d / %d],'
@@ -475,7 +480,7 @@ def train():
                 )
 
             iter = int(idx) + epoch * dataset_size + i
-
+            #显示Loss
             if i % opt.display_iter == 0:
                 A256 = util.get_current_visuals(real_A,fake_B,rec_A,real_B)
                 A128 = util.get_current_visuals(real_A128, fake_B128, rec_A128, real_B128)
@@ -511,6 +516,7 @@ def train():
                 train_visual.plot_current_errors(iter, err1, winid=10)
                 test()
 
+                #保存loss
             if i % opt.save_iter == 0 :
                 snapshot_name = str(iter)
                 torch.save(GA.state_dict(), os.path.join(opt.ckpt_path, snapshot_name + '_ga.pth'))
