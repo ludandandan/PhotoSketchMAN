@@ -27,9 +27,9 @@ parser.add_argument('--dataroot', default='',
                          help='path to images (should have subfolders trainA, trainB, valA, valB, testA, testB)')
 parser.add_argument('--batchSize', type=int, default=1, help='input batch size')
 parser.add_argument('--loadSize', type=int, default=256, help='scale images to this size')
-parser.add_argument('--fineSize', type=int, default=256, help='then crop to this size')
-parser.add_argument('--input_nc', type=int, default=3, help='# of input image channels')
-parser.add_argument('--output_nc', type=int, default=3, help='# of output image channels')
+parser.add_argument('--fineSize', type=int, default=256, help='then crop to this size')#裁剪
+parser.add_argument('--input_nc', type=int, default=3, help='# of input image channels')#输入为3通道图像
+parser.add_argument('--output_nc', type=int, default=3, help='# of output image channels')#输出也为3通道图像
 parser.add_argument('--ngf', type=int, default=64, help='# of gen filters in first conv layer')
 parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer')
 parser.add_argument('--which_model_netD', type=str, default='basic', help='selects model to use for netD')
@@ -37,54 +37,58 @@ parser.add_argument('--which_model_netG', type=str, default='resnet_9blocks', he
 parser.add_argument('--n_layers_D', type=int, default=3, help='only used if which_model_netD==n_layers')
 parser.add_argument('--gpu_ids', type=str, default='0', help='gpu ids: e.g. 0  0,1,2, 0,2. use -1 for CPU')
 parser.add_argument('--nThreads', default=1, type=int, help='# threads for loading data')
-parser.add_argument('--norm', type=str, default='instance', help='instance normalization or batch normalization')
+parser.add_argument('--norm', type=str, default='instance', help='instance normalization or batch normalization')#默认使用instance norm
 parser.add_argument('--serial_batches', action='store_true',
                          help='if true, takes images in order to make batches, otherwise takes them randomly')
 parser.add_argument('--display_winsize', type=int, default=256, help='display window size')
 parser.add_argument('--train_display_id', type=int, default=1, help='window id of the web display')
 parser.add_argument('--val_display_id', type=int, default=10, help='window id of the web display')
-parser.add_argument('--display_port', type=int, default=8097, help='visdom port of the web display')
+parser.add_argument('--display_port', type=int, default=8097, help='visdom port of the web display')#端口
 parser.add_argument('--display_single_pane_ncols', type=int, default=4,
                          help='if positive, display all images in a single visdom web panel with certain number of images per row.')
-parser.add_argument('--use_dropout', action='store_true', help='use dropout for the generator')
+parser.add_argument('--use_dropout', action='store_true', help='use dropout for the generator')#使用dropout
 parser.add_argument('--max_dataset_size', type=int, default=float("inf"),
                          help='Maximum number of samples allowed per dataset. If the dataset directory contains more than max_dataset_size, only a subset is loaded.')
 parser.add_argument('--resize_or_crop', type=str, default='resize_and_crop',
-                         help='scaling and cropping of images at load time [resize_and_crop|crop|scale_width]')
-parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')
+                         help='scaling and cropping of images at load time [resize_and_crop|crop|scale_width]')#调整大小，裁剪
+parser.add_argument('--phase', type=str, default='train', help='train, val, test, etc')#选择是训练阶段还是验证阶段还是测试阶段
 parser.add_argument('--no_flip', action='store_true', help='use dropout for the generator')
 parser.add_argument('--resume', default = '')
-parser.add_argument('--lr', type=float, default=0.0002, help='initial learning rate for adam')
-parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')
+parser.add_argument('--lr', type=float, default=0.0002, help='initial learning rate for adam')#学习速率0.0002
+parser.add_argument('--beta1', type=float, default=0.5, help='momentum term of adam')#优化器adam的beta1
 parser.add_argument('--no_lsgan', action='store_true', help='do *not* use least square GAN, if false, use vanilla GAN')
 parser.add_argument('--niter', type=int, default=100, help='# of iter at starting learning rate')
 parser.add_argument('--niter_decay', type=int, default=300,
-                         help='# of iter to linearly decay learning rate to zero')
+                         help='# of iter to linearly decay learning rate to zero')#学习速率每300次迭代线性减小
 parser.add_argument('--print_iter', type=int, default=50, help='frequency of showing training results on console')
 parser.add_argument('--display_iter', type=int, default=50, help='frequency of showing training results on console')
 parser.add_argument('--save_iter', type=int, default=100, help='frequency of showing training results on console')
-parser.add_argument('--ckpt_path', default = '')
+parser.add_argument('--ckpt_path', default = '')#保存参数的路径
 
 
 opt = parser.parse_args()
 print(opt)
 
+#可视化相关
 train_visual = Visualizer(opt.train_display_id,'train',5)
 val_visual = Visualizer(opt.val_display_id,'val',5)
 
 if not os.path.exists(opt.ckpt_path):
     os.makedirs(opt.ckpt_path)
 
+#载入数据
 data_loader = CreateDataLoader(opt)
 dataset = data_loader.load_data()
 dataset_size = len(data_loader)
 
+#载入验证数据
 opt.pahse = 'val'
 val_data_loader = CreateDataLoader(opt)
 val_dataset = val_data_loader.load_data()
 
 # val_loader = DataLoader(val_set, batch_size=1, num_workers=12, pin_memory=True)
 
+#定义模型GA, GB两个一样，都是包含9个res blocks的， DA1, DA2, DA3, DB1, DB2, DB3六个一样70patchGAN
 ## define models
 # 1---256x256 stage
 # 2---128x128 stage
@@ -106,6 +110,7 @@ DB2 = nets.define_D(input_nc=2* 3, ndf=64,
 DB3 = nets.define_D(input_nc=2* 3, ndf=64,
                     which_model_netD='n_layers',gpu_ids=[0],init_type='normal', n_layers_D=1)
 
+# 断了以后在某个参数的基础上继续训练的用这个resume
 ## resume training
 idx = 0
 if opt.resume:
@@ -142,7 +147,7 @@ if opt.resume:
         opt.ckpt_path = os.path.join(opt.ckpt_path, 'resume_'+ idx)
         if not os.path.exists(opt.ckpt_path):
             os.makedirs(opt.ckpt_path)
-
+#移动到cuda上去
 GA = GA.cuda()
 GB = GB.cuda()
 DA1 = DA1.cuda()
@@ -152,8 +157,9 @@ DB1 = DB1.cuda()
 DB2 = DB2.cuda()
 DB3 = DB3.cuda()
 
+#所有模型的优化策略都使用adam
 ## optimizer
-optimizer_G = torch.optim.Adam(itertools.chain(GA.parameters(), GB.parameters()),
+optimizer_G = torch.optim.Adam(itertools.chain(GA.parameters(), GB.parameters()),#注意这里对两个生成器同时参数更新
                                                 lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizer_D_A1 = torch.optim.Adam(DA1.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
 optimizer_D_B1 = torch.optim.Adam(DB1.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
